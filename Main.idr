@@ -47,15 +47,23 @@ implementation DecEq LType where
   decEq (TVar x) (y ~> z) = No $ \Refl impossible
 
 Subst : Type
-Subst = TypeVarName -> Maybe LType
+Subst = TypeVarName -> LType
 
 apply : Subst -> LType -> LType
 apply s (x ~> y) = apply s x ~> apply s y
-apply s (TVar x) =
-  case s x of
-    Nothing => TVar x
-    Just y => y
+apply s (TVar x) = s x
 apply s (Primitive x) = Primitive x
+
+sequenceS : Subst -> Subst -> Subst
+sequenceS s s2 x =
+  apply s2 $ apply s $ TVar x
+
+applySeqIsApplyApply : (a : Subst) -> (b : Subst) -> (x : LType) -> apply (sequenceS a b) x = apply b (apply a x)
+applySeqIsApplyApply a b (x ~> y) =
+  rewrite applySeqIsApplyApply a b x in
+  rewrite applySeqIsApplyApply a b y in Refl
+applySeqIsApplyApply a b (TVar x) = Refl
+applySeqIsApplyApply a b (Primitive x) = Refl
 
 unify : (a : LType) -> (b : LType)
   -> Either
@@ -63,15 +71,24 @@ unify : (a : LType) -> (b : LType)
     (s : Subst ** apply s a = apply s b)
 
 unify (x ~> y) (z ~> w) =
-  -- s1 <- unify x z
-  -- s2 <- unify y w
-  -- let a = apply s x = apply s z
-  ?r
+  case unify x z of
+    Left contra => ?p
+    Right (s**prf) =>
+      case unify (apply s y) (apply s w) of
+        Left contra => Left ?l
+        Right (s2**prf2) => Right(sequenceS s s2 **
+        rewrite applySeqIsApplyApply s s2 x in
+        rewrite applySeqIsApplyApply s s2 y in
+        rewrite applySeqIsApplyApply s s2 z in
+        rewrite applySeqIsApplyApply s s2 w in
+        rewrite prf in
+        rewrite prf2 in Refl)
 
 unify (Primitive x) (Primitive y) =
   case decEq (Primitive x) (Primitive y) of
-    Yes prf => Right (\_ => Nothing ** prf)
+    Yes prf => Right (\x => TVar x ** prf)
     No contra => Left(\_ => contra)
+
 unify (TVar x) y = ?x_1
 unify x (TVar y) = ?x_7
 unify _ _ = ?x
