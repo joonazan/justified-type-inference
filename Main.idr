@@ -68,40 +68,36 @@ applySeqIsApplyApply a b (x ~> y) =
 applySeqIsApplyApply a b (TVar x) = Refl
 applySeqIsApplyApply a b (Primitive x) = Refl
 
-data ContainsTVar : TypeVarName -> LType -> Type where
-  Here : ContainsTVar x (TVar x)
-  InArgument : ContainsTVar x t -> ContainsTVar x (t ~> r)
-  InReturn : ContainsTVar x t -> ContainsTVar x (a ~> t)
+data LTypeContains : LType -> LType -> Type where
+  Here : LTypeContains x x
+  InArgument : LTypeContains x t -> LTypeContains x (t ~> r)
+  InReturn : LTypeContains x t -> LTypeContains x (a ~> t)
 
-notInDifferentTVar : ((x = y) -> Void) -> ContainsTVar x (TVar y) -> Void
-notInDifferentTVar xIsNotY Here = xIsNotY Refl
+--notInDifferentTVar : ((x = y) -> Void) -> LTypeContains x (TVar y) -> Void
+--notInDifferentTVar xIsNotY Here = xIsNotY Refl
 
-neitherBranch : (ContainsTVar x a -> Void) -> (ContainsTVar x r -> Void)
-  -> ContainsTVar x (a ~> r) -> Void
+neitherBranch : (LTypeContains x a -> Void) -> (LTypeContains x r -> Void)
+  -> (x = (a ~> r) -> Void)
+  -> LTypeContains x (a ~> r) -> Void
 
-neitherBranch notInArg _ (InArgument inArg) = notInArg inArg
-neitherBranch _ notInReturn (InReturn inReturn) = notInReturn inReturn
+neitherBranch notInArg _ _ (InArgument inArg) = notInArg inArg
+neitherBranch _ notInReturn _ (InReturn inReturn) = notInReturn inReturn
 
-noTVarInPrimitive : ContainsTVar x (Primitive y) -> Void
+noTVarInPrimitive : LTypeContains (TVar x) (Primitive y) -> Void
 noTVarInPrimitive Here impossible
 noTVarInPrimitive (InArgument _) impossible
 noTVarInPrimitive (InReturn _) impossible
 
-decContainsTVar : (v : TypeVarName) -> (t : LType) -> Dec (ContainsTVar v t)
-decContainsTVar x (a ~> r) =
-  case decContainsTVar x a of
-    Yes prf => Yes $ InArgument prf
-    No contra =>
-      case decContainsTVar x r of
-        Yes prf => Yes $ InReturn prf
-        No contra2 => No $ neitherBranch contra contra2
-
-decContainsTVar x (TVar y) =
-  case decEq x y of
-    Yes prf => rewrite prf in Yes Here
-    No contra => No $ notInDifferentTVar contra
-
-decContainsTVar x (Primitive y) = No noTVarInPrimitive
+decLTypeContains : (x : LType) -> (t : LType) -> Dec (LTypeContains x t)
+decLTypeContains x y with (decEq x y)
+  decLTypeContains x y | (Yes prf) = rewrite prf in Yes Here
+  decLTypeContains x (a ~> r) | (No notEqual) =
+    case decLTypeContains x a of
+      Yes prf => Yes $ InArgument prf
+      No notInArg =>
+        case decLTypeContains x r of
+          Yes prf => Yes $ InReturn prf
+          No notInReturn => No $ neitherBranch notInArg notInReturn notEqual
 
 infix 5 |->
 (|->) : TypeVarName -> LType -> TypeVarName -> LType
@@ -112,10 +108,10 @@ infix 5 |->
 fstEqIfEq : a ~> b = c ~> d -> a = c
 fstEqIfEq Refl = Refl
 
-sndEqIfEq : a ~> b = c ~> d -> a = c
+sndEqIfEq : a ~> b = c ~> d -> b = d
 sndEqIfEq Refl = Refl
 
-noOpSubst : (z : LType) -> (ContainsTVar x y -> Void) -> apply (x |-> z) y = y
+noOpSubst : (z : LType) -> (LTypeContains (TVar x) y -> Void) -> apply (x |-> z) y = y
 noOpSubst {y = (a ~> r)} z xNotInY =
   rewrite noOpSubst z (xNotInY . InArgument) in
   rewrite noOpSubst z (xNotInY . InReturn) in Refl
@@ -127,16 +123,50 @@ noOpSubst {x} {y = (TVar k)} z xNotInY with (decEq x k)
 
 noOpSubst {y = (Primitive x)} _ _ = Refl
 
-occurs : ContainsTVar x (a ~> b) -> (s : Subst) -> s x = (apply s a) ~> apply s b -> Void
-occurs (InArgument Here) s = ?lsvg
-occurs (InReturn x) s = ?lv_2
+alsoContainsArg : LTypeContains (x1 ~> x2) t -> LTypeContains x1 t
+alsoContainsArg Here = InArgument Here
+alsoContainsArg (InArgument x) = InArgument $ alsoContainsArg x
+alsoContainsArg (InReturn x) = InReturn $ alsoContainsArg x
+
+alsoContainsRet : LTypeContains (x1 ~> x2) t -> LTypeContains x2 t
+alsoContainsRet Here = InReturn Here
+alsoContainsRet (InArgument x) = InArgument $ alsoContainsRet x
+alsoContainsRet (InReturn x) = InReturn $ alsoContainsRet x
+
+mutual
+  notInLarger : LTypeContains x a -> x = (a ~> r) -> Void
+  notInLarger Here Refl impossible
+  notInLarger {x = x1 ~> x2} (InArgument rest) eq =
+    notInLarger (alsoContainsArg rest) $ fstEqIfEq eq
+
+  notInLarger {x = x1 ~> x2} (InReturn rest) eq =
+    notInLarger2 (alsoContainsArg rest) (fstEqIfEq eq)
+
+  notInLarger2 : LTypeContains x r -> x = (a ~> r) -> Void
+  notInLarger2 Here Refl impossible
+  notInLarger2 {x = x1 ~> x2} (InArgument rest) eq =
+    notInLarger (alsoContainsRet rest) $ sndEqIfEq eq
+
+  notInLarger2 {x = x1 ~> x2} (InReturn rest) eq =
+    notInLarger2 (alsoContainsRet rest) (sndEqIfEq eq)
+
+mapContains : LTypeContains x a -> (s : Subst) -> LTypeContains (apply s x) (apply s a)
+mapContains Here s = Here
+mapContains (InArgument loc) s = InArgument $ mapContains loc s
+mapContains (InReturn loc) s = InReturn $ mapContains loc s
+
+occurs : LTypeContains (TVar x) (a ~> b) -> (s : Subst) -> s x = (apply s a) ~> apply s b -> Void
+occurs (InArgument loc) s = notInLarger $ mapContains loc s
+occurs (InReturn loc) s = notInLarger2 $ mapContains loc s
+
+tvarNotInPrim : LTypeContains (TVar _) (Primitive _) -> Void
 
 bind : (a : TypeVarName) -> (b : LType)
   -> Either
     ((s : Subst) -> apply s (TVar a) = apply s b -> Void)
     (s : Subst ** apply s (TVar a) = apply s b)
 bind x y =
-  case decContainsTVar x y of
+  case decLTypeContains (TVar x) y of
     No contra => Right (x |-> y **
       rewrite decEqSelfIsYes {x} in
       rewrite noOpSubst y contra in Refl)
@@ -148,7 +178,7 @@ bind x y =
             Here => Refl
         )
         a ~> b => Left $ occurs xInY
-        Primitive _ impossible
+        Primitive _ => Left $ absurd $ tvarNotInPrim xInY
 
 unify : (a : LType) -> (b : LType)
   -> Either
