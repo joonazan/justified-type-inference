@@ -46,6 +46,12 @@ implementation DecEq LType where
   decEq (x ~> y) (Primitive z) = No $ \Refl impossible
   decEq (TVar x) (y ~> z) = No $ \Refl impossible
 
+fstEqIfEq : a ~> b = c ~> d -> a = c
+fstEqIfEq Refl = Refl
+
+sndEqIfEq : a ~> b = c ~> d -> b = d
+sndEqIfEq Refl = Refl
+
 Subst : Type
 Subst = TypeVarName -> LType
 
@@ -56,6 +62,14 @@ apply : Subst -> LType -> LType
 apply s (x ~> y) = apply s x ~> apply s y
 apply s (TVar x) = s x
 apply s (Primitive x) = Primitive x
+
+nullsubstIsNoOp : (x : LType) -> apply Main.nullsubst x = x
+nullsubstIsNoOp (x ~> y) =
+  rewrite nullsubstIsNoOp x in
+  rewrite nullsubstIsNoOp y in Refl
+
+nullsubstIsNoOp (TVar k) = Refl
+nullsubstIsNoOp (Primitive x) = Refl
 
 sequenceS : Subst -> Subst -> Subst
 sequenceS s s2 x =
@@ -72,9 +86,6 @@ data LTypeContains : LType -> LType -> Type where
   Here : LTypeContains x x
   InArgument : LTypeContains x t -> LTypeContains x (t ~> r)
   InReturn : LTypeContains x t -> LTypeContains x (a ~> t)
-
---notInDifferentTVar : ((x = y) -> Void) -> LTypeContains x (TVar y) -> Void
---notInDifferentTVar xIsNotY Here = xIsNotY Refl
 
 neitherBranch : (LTypeContains x a -> Void) -> (LTypeContains x r -> Void)
   -> (x = (a ~> r) -> Void)
@@ -104,12 +115,6 @@ infix 5 |->
 (|->) k v x with (decEq k x)
   (|->) k v x | (Yes _) = v
   (|->) k v x | (No _) = TVar x
-
-fstEqIfEq : a ~> b = c ~> d -> a = c
-fstEqIfEq Refl = Refl
-
-sndEqIfEq : a ~> b = c ~> d -> b = d
-sndEqIfEq Refl = Refl
 
 noOpSubst : (z : LType) -> (LTypeContains (TVar x) y -> Void) -> apply (x |-> z) y = y
 noOpSubst {y = (a ~> r)} z xNotInY =
@@ -161,21 +166,32 @@ occurs (InReturn loc) s = notInLarger2 $ mapContains loc s
 
 tvarNotInPrim : LTypeContains (TVar _) (Primitive _) -> Void
 
+MGU : Subst -> LType -> LType -> Type
+MGU s a b =
+  ( apply s a = apply s b
+  , (s2 : Subst) -> apply s2 a = apply s2 b -> (x : LType) -> (s3 ** apply s2 x = apply s3 $ apply s x)
+  )
+
 bind : (a : TypeVarName) -> (b : LType)
   -> Either
     ((s : Subst) -> apply s (TVar a) = apply s b -> Void)
-    (s : Subst ** apply s (TVar a) = apply s b)
+    (s : Subst ** MGU s (TVar a) b)
 bind x y =
   case decLTypeContains (TVar x) y of
     No contra => Right (x |-> y **
-      rewrite decEqSelfIsYes {x} in
-      rewrite noOpSubst y contra in Refl)
+      ( rewrite decEqSelfIsYes {x} in
+        rewrite noOpSubst y contra in Refl
+      , \s2, s2prf, t => (?slvoai)
+      )
+    )
 
     Yes xInY =>
       case y of
         TVar yvar => Right (nullsubst **
-          case xInY of
-            Here => Refl
+          ( case xInY of
+              Here => Refl
+          , \s2, _, t => (s2 ** rewrite nullsubstIsNoOp t7 in Refl)
+          )
         )
         a ~> b => Left $ occurs xInY
         Primitive _ => Left $ absurd $ tvarNotInPrim xInY
@@ -183,33 +199,41 @@ bind x y =
 unify : (a : LType) -> (b : LType)
   -> Either
     ((s : Subst) -> apply s a = apply s b -> Void)
-    (s : Subst ** apply s a = apply s b)
+    (s : Subst ** MGU s a b)
 
 unify (x ~> y) (z ~> w) =
   case unify x z of
     Left contra => Left $ \s => contra s . fstEqIfEq
 
-    Right (s**prf) =>
+    Right (s ** (prf, mguprf)) =>
       case unify (apply s y) (apply s w) of
         Left contra => Left $ \s2, claim => ?pulma
-        Right (s2**prf2) => Right (sequenceS s s2 **
-        rewrite applySeqIsApplyApply s s2 x in
-        rewrite applySeqIsApplyApply s s2 y in
-        rewrite applySeqIsApplyApply s s2 z in
-        rewrite applySeqIsApplyApply s s2 w in
-        rewrite prf in
-        rewrite prf2 in Refl)
+        Right (s2 ** (prf2, mguprf2)) => Right (sequenceS s s2 **
+          ( rewrite applySeqIsApplyApply s s2 x in
+            rewrite applySeqIsApplyApply s s2 y in
+            rewrite applySeqIsApplyApply s s2 z in
+            rewrite applySeqIsApplyApply s s2 w in
+            rewrite prf in
+            rewrite prf2 in Refl
+          , ?mgu3
+          )
+        )
 
 unify (Primitive x) (Primitive y) =
   case decEq (Primitive x) (Primitive y) of
-    Yes prf => Right (nullsubst ** prf)
+    Yes prf => Right (nullsubst **
+      ( prf
+      , \s2, _, t => (s2 ** rewrite nullsubstIsNoOp t in Refl)
+      )
+    )
     No contra => Left (\_ => contra)
 
 unify (TVar x) y = bind x y
 unify x (TVar y) =
   case bind y x of
     Left contra => Left $ \s => negEqSym $ contra s
-    Right (s ** prf) => Right (s ** sym prf)
+    Right (s ** (prf, mguprf)) =>
+      Right (s ** (sym prf, \s2, s2prf => mguprf s2 $ sym s2prf))
 
 -- Mismatch cases
 
