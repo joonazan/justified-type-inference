@@ -1,22 +1,27 @@
+module Unify
+
+import Control.ST
+
 %default total
 
-Identifier : Type
-Identifier = String
-
-data Expr : Type where
-  Variable : Identifier -> Expr
-  Lambda : Identifier -> Expr -> Expr
-  App : Expr -> Expr -> Expr
-
+export
 TypeVarName : Type
 TypeVarName = Nat
 
 infixr 10 ~>
 
+public export
 data LType : Type where
   (~>) : LType -> LType -> LType
   TVar : TypeVarName -> LType
   Primitive : String -> LType
+
+export
+freshTVar : (x : Var) -> ST m LType [x ::: State Nat]
+freshTVar x = do
+  i <- read x
+  write x (i + 1)
+  pure (TVar i)
 
 implementation DecEq LType where
   decEq (x ~> y) (z ~> w) with (decEq x z, decEq y w)
@@ -52,18 +57,21 @@ fstEqIfEq Refl = Refl
 sndEqIfEq : a ~> b = c ~> d -> b = d
 sndEqIfEq Refl = Refl
 
+export
 Subst : Type
 Subst = TypeVarName -> LType
 
+export
 nullsubst : Subst
 nullsubst x = TVar x
 
+export
 apply : Subst -> LType -> LType
 apply s (x ~> y) = apply s x ~> apply s y
 apply s (TVar x) = s x
 apply s (Primitive x) = Primitive x
 
-nullsubstIsNoOp : (x : LType) -> apply Main.nullsubst x = x
+nullsubstIsNoOp : (x : LType) -> apply Unify.nullsubst x = x
 nullsubstIsNoOp (x ~> y) =
   rewrite nullsubstIsNoOp x in
   rewrite nullsubstIsNoOp y in Refl
@@ -71,6 +79,7 @@ nullsubstIsNoOp (x ~> y) =
 nullsubstIsNoOp (TVar k) = Refl
 nullsubstIsNoOp (Primitive x) = Refl
 
+export
 sequenceS : Subst -> Subst -> Subst
 sequenceS s s2 x =
   apply s2 $ apply s $ TVar x
@@ -166,6 +175,7 @@ occurs (InReturn loc) s = notInLarger2 $ mapContains loc s
 
 tvarNotInPrim : LTypeContains (TVar _) (Primitive _) -> Void
 
+export
 MGU : Subst -> LType -> LType -> Type
 MGU s a b =
   ( apply s a = apply s b
@@ -196,6 +206,7 @@ bind x y =
         a ~> b => Left $ occurs xInY
         Primitive _ => Left $ absurd $ tvarNotInPrim xInY
 
+export
 unify : (a : LType) -> (b : LType)
   -> Either
     ((s : Subst) -> apply s a = apply s b -> Void)
