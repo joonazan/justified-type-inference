@@ -179,8 +179,20 @@ export
 MGU : Subst -> LType -> LType -> Type
 MGU s a b =
   ( apply s a = apply s b
-  , (s2 : Subst) -> apply s2 a = apply s2 b -> (x : LType) -> (s3 ** apply s2 x = apply s3 $ apply s x)
+  , (s2 : Subst) -> apply s2 a = apply s2 b -> (s3 ** ((x:LType)-> apply s2 x = apply s3 $ apply s x))
   )
+
+bindPrf : (s2 : Nat -> LType) -> (s2prf : s2 x = apply s2 y) -> (any : LType) -> apply s2 any = apply s2 (apply (x |-> y) any)
+bindPrf s2 s2prf (y ~> z) =
+  rewrite bindPrf s2 s2prf y in
+  rewrite bindPrf s2 s2prf z in
+  Refl
+
+bindPrf {x} s2 s2prf (TVar k) with (decEq x k)
+  bindPrf {x} s2 s2prf (TVar k) | (No _) = Refl
+  bindPrf {x} s2 s2prf (TVar k) | (Yes prf) = rewrite sym prf in s2prf
+
+bindPrf s2 s2prf (Primitive y) = Refl
 
 bind : (a : TypeVarName) -> (b : LType)
   -> Either
@@ -191,7 +203,7 @@ bind x y =
     No contra => Right (x |-> y **
       ( rewrite decEqSelfIsYes {x} in
         rewrite noOpSubst y contra in Refl
-      , \s2, s2prf, t => (?slvoai)
+      , \s2, s2prf => (s2 ** \any => bindPrf s2 s2prf any)
       )
     )
 
@@ -200,7 +212,7 @@ bind x y =
         TVar yvar => Right (nullsubst **
           ( case xInY of
               Here => Refl
-          , \s2, _, t => (s2 ** rewrite nullsubstIsNoOp t7 in Refl)
+          , \s2, _ => (s2 ** \any => rewrite nullsubstIsNoOp any in Refl)
           )
         )
         a ~> b => Left $ occurs xInY
@@ -218,7 +230,14 @@ unify (x ~> y) (z ~> w) =
 
     Right (s ** (prf, mguprf)) =>
       case unify (apply s y) (apply s w) of
-        Left contra => Left $ \s2, claim => ?pulma
+        Left contra => Left $ \s2, claim =>
+          let
+            (x1 ** k) = mguprf s2 $ fstEqIfEq claim
+          in contra x1 $
+            rewrite sym $ k y in
+            rewrite sym $ k w in
+            sndEqIfEq claim
+
         Right (s2 ** (prf2, mguprf2)) => Right (sequenceS s s2 **
           ( rewrite applySeqIsApplyApply s s2 x in
             rewrite applySeqIsApplyApply s s2 y in
@@ -226,7 +245,7 @@ unify (x ~> y) (z ~> w) =
             rewrite applySeqIsApplyApply s s2 w in
             rewrite prf in
             rewrite prf2 in Refl
-          , ?mgu3
+          , \unifier, prf => (?s2)
           )
         )
 
@@ -234,7 +253,7 @@ unify (Primitive x) (Primitive y) =
   case decEq (Primitive x) (Primitive y) of
     Yes prf => Right (nullsubst **
       ( prf
-      , \s2, _, t => (s2 ** rewrite nullsubstIsNoOp t in Refl)
+      , \s2, _ => (s2 ** \t => rewrite nullsubstIsNoOp t in Refl)
       )
     )
     No contra => Left (\_ => contra)
