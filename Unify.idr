@@ -245,7 +245,17 @@ unify (x ~> y) (z ~> w) =
             rewrite applySeqIsApplyApply s s2 w in
             rewrite prf in
             rewrite prf2 in Refl
-          , \unifier, prf => (?s2)
+          , \unifier, uniprf =>
+            let
+              (sToUnifier ** sToUnifierPrf) = mguprf unifier $ fstEqIfEq uniprf
+              (sAnds2sToUnifier ** sAnds2sToUnifierPrf) = mguprf2 sToUnifier $
+                rewrite sym $ sToUnifierPrf y in
+                rewrite sym $ sToUnifierPrf w in sndEqIfEq uniprf
+            in (sAnds2sToUnifier ** \x =>
+              rewrite sToUnifierPrf x in
+              rewrite sAnds2sToUnifierPrf (apply s x) in
+              rewrite applySeqIsApplyApply s s2 x in Refl
+            )
           )
         )
 
