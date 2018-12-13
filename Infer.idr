@@ -1,6 +1,8 @@
 import Unify
 import Control.ST
 
+%default total
+
 Identifier : Type
 Identifier = String
 

@@ -102,6 +102,9 @@ neitherBranch : (LTypeContains x a -> Void) -> (LTypeContains x r -> Void)
 
 neitherBranch notInArg _ _ (InArgument inArg) = notInArg inArg
 neitherBranch _ notInReturn _ (InReturn inReturn) = notInReturn inReturn
+neitherBranch {x = w ~> y} _ _ notHere Here = notHere Refl
+neitherBranch {x = TVar _} _ _ _ Here impossible
+neitherBranch {x = Primitive _} _ _ _ Here impossible
 
 noTVarInPrimitive : LTypeContains (TVar x) (Primitive y) -> Void
 noTVarInPrimitive Here impossible
@@ -118,6 +121,11 @@ decLTypeContains x y with (decEq x y)
         case decLTypeContains x r of
           Yes prf => Yes $ InReturn prf
           No notInReturn => No $ neitherBranch notInArg notInReturn notEqual
+
+  decLTypeContains x (TVar y) | (No notEqual) = No $ \claim => case claim of
+    Here => notEqual Refl
+  decLTypeContains x (Primitive y) | (No notEqual) = No $ \claim => case claim of
+    Here => notEqual Refl
 
 infix 5 |->
 (|->) : TypeVarName -> LType -> TypeVarName -> LType
@@ -156,6 +164,11 @@ mutual
   notInLarger {x = x1 ~> x2} (InReturn rest) eq =
     notInLarger2 (alsoContainsArg rest) (fstEqIfEq eq)
 
+  notInLarger {x = Primitive _} (InArgument rest) Refl impossible
+  notInLarger {x = TVar _} (InArgument rest) Refl impossible
+  notInLarger {x = Primitive _} (InReturn rest) Refl impossible
+  notInLarger {x = TVar _} (InReturn rest) Refl impossible
+
   notInLarger2 : LTypeContains x r -> x = (a ~> r) -> Void
   notInLarger2 Here Refl impossible
   notInLarger2 {x = x1 ~> x2} (InArgument rest) eq =
@@ -163,6 +176,11 @@ mutual
 
   notInLarger2 {x = x1 ~> x2} (InReturn rest) eq =
     notInLarger2 (alsoContainsRet rest) (sndEqIfEq eq)
+
+  notInLarger2 {x = Primitive _} (InArgument rest) Refl impossible
+  notInLarger2 {x = TVar _} (InArgument rest) Refl impossible
+  notInLarger2 {x = Primitive _} (InReturn rest) Refl impossible
+  notInLarger2 {x = TVar _} (InReturn rest) Refl impossible
 
 mapContains : LTypeContains x a -> (s : Subst) -> LTypeContains (apply s x) (apply s a)
 mapContains Here s = Here
@@ -174,6 +192,9 @@ occurs (InArgument loc) s = notInLarger $ mapContains loc s
 occurs (InReturn loc) s = notInLarger2 $ mapContains loc s
 
 tvarNotInPrim : LTypeContains (TVar _) (Primitive _) -> Void
+tvarNotInPrim Here impossible
+tvarNotInPrim (InArgument _) impossible
+tvarNotInPrim (InReturn _) impossible
 
 export
 MGU : Subst -> LType -> LType -> Type
@@ -229,7 +250,16 @@ unify (x ~> y) (z ~> w) =
     Left contra => Left $ \s => contra s . fstEqIfEq
 
     Right (s ** (prf, mguprf)) =>
-      case unify (apply s y) (apply s w) of
+      case unify
+        (assert_smaller (x ~> y) (apply s y))
+        (assert_smaller (x ~> w) (apply s w)) of
+      {- I am not sure if the assert_smaller calls here are valid,
+         as `apply s` may increase size.
+         Progress is always made because either
+          `apply s` does nothing, so the size decreases
+          or it decreases the number of type variables.
+      -}
+
         Left contra => Left $ \s2, claim =>
           let
             (x1 ** k) = mguprf s2 $ fstEqIfEq claim
