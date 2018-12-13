@@ -4,7 +4,7 @@ import Control.ST
 
 %default total
 
-export
+public export
 TypeVarName : Type
 TypeVarName = Nat
 
