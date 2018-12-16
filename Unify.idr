@@ -252,7 +252,7 @@ unify (x ~> y) (z ~> w) =
     Right (s ** (prf, mguprf)) =>
       case unify
         (assert_smaller (x ~> y) (apply s y))
-        (assert_smaller (x ~> w) (apply s w)) of
+        (assert_smaller (z ~> w) (apply s w)) of
       {- I am not sure if the assert_smaller calls here are valid,
          as `apply s` may increase size.
          Progress is always made because either
