@@ -41,7 +41,7 @@ infer' : (nextId : Var) -> Env -> Expr -> ST Maybe (Subst, LType) [nextId ::: St
 
 infer' _ env (Variable x) = do
   t <- lift $ env x
-  pure (nullsubst, t)
+  pure (neutral, t)
 
 infer' ctx env (App f x) = do
   (fSubst, fType) <- infer' ctx env f
@@ -51,7 +51,7 @@ infer' ctx env (App f x) = do
   (unifier ** _) <- lift $ eitherToMaybe $
     unify (apply xSubst fType) (xType ~> returntype)
 
-  pure (sequenceS fSubst $ sequenceS xSubst unifier, apply unifier returntype)
+  pure (unifier <+> xSubst <+> fSubst, apply unifier returntype)
 
 infer' ctx env (Lambda argname body) = do
   argtype <- freshTVar ctx

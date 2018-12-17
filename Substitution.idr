@@ -7,18 +7,6 @@ public export
 Subst : Type
 Subst = TypeVarName -> LType
 
-export
-nullsubst : Subst
-nullsubst x = TVar x
-
-infix 5 |->
-
-export
-(|->) : TypeVarName -> LType -> Subst
-(|->) k v x with (decEq k x)
-  (|->) k v x | (Yes _) = v
-  (|->) k v x | (No _) = TVar x
-
 -- should be just export, but Idris does not allow it
 public export
 lookup : TypeVarName -> Subst -> LType
@@ -31,18 +19,29 @@ apply s (TVar x) = lookup x s
 apply s (Primitive x) = Primitive x
 
 export
-sequenceS : Subst -> Subst -> Subst
-sequenceS s s2 x =
-  apply s2 $ apply s $ TVar x
+implementation Semigroup Subst where
+  a <+> b = \x => apply a $ apply b $ TVar x
 
 export
-nullsubstIsNoOp : (x : LType) -> apply Substitution.nullsubst x = x
+implementation Monoid Subst where
+  neutral x = TVar x
+
+infix 5 |->
+export
+(|->) : TypeVarName -> LType -> Subst
+(|->) k v x with (decEq k x)
+  (|->) k v x | (Yes _) = v
+  (|->) k v x | (No _) = TVar x
+
+%auto_implicits off
+export
+nullsubstIsNoOp : (x : LType) -> apply neutral x = x
+nullsubstIsNoOp (TVar k) = Refl
+nullsubstIsNoOp (Primitive x) = Refl
 nullsubstIsNoOp (x ~> y) =
   rewrite nullsubstIsNoOp x in
   rewrite nullsubstIsNoOp y in Refl
-
-nullsubstIsNoOp (TVar k) = Refl
-nullsubstIsNoOp (Primitive x) = Refl
+%auto_implicits on
 
 export
 noOpSubst : (z : LType) -> (LTypeContains (TVar x) y -> Void) -> apply (x |-> z) y = y
@@ -58,7 +57,7 @@ noOpSubst {x} {y = (TVar k)} z xNotInY with (decEq x k)
 noOpSubst {y = (Primitive x)} _ _ = Refl
 
 export
-applySeqIsApplyApply : (a : Subst) -> (b : Subst) -> (x : LType) -> apply (sequenceS a b) x = apply b (apply a x)
+applySeqIsApplyApply : (a : Subst) -> (b : Subst) -> (x : LType) -> apply (a <+> b) x = apply a (apply b x)
 applySeqIsApplyApply a b (x ~> y) =
   rewrite applySeqIsApplyApply a b x in
   rewrite applySeqIsApplyApply a b y in Refl

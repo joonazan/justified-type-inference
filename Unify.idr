@@ -66,7 +66,7 @@ bind x y =
 
     Yes xInY =>
       case y of
-        TVar yvar => Right (nullsubst **
+        TVar yvar => Right (neutral **
           ( rewrite nullsubstIsNoOp (TVar x) in
             rewrite nullsubstIsNoOp (TVar yvar) in
             case xInY of
@@ -107,11 +107,11 @@ unify (x ~> y) (z ~> w) =
             rewrite sym $ k w in
             sndEqIfEq s2Unifies
 
-        Right (s2 ** (prf2, mguprf2)) => Right (sequenceS s s2 **
-          ( rewrite applySeqIsApplyApply s s2 x in
-            rewrite applySeqIsApplyApply s s2 y in
-            rewrite applySeqIsApplyApply s s2 z in
-            rewrite applySeqIsApplyApply s s2 w in
+        Right (s2 ** (prf2, mguprf2)) => Right (s2 <+> s **
+          ( rewrite applySeqIsApplyApply s2 s x in
+            rewrite applySeqIsApplyApply s2 s y in
+            rewrite applySeqIsApplyApply s2 s z in
+            rewrite applySeqIsApplyApply s2 s w in
             rewrite prf in
             rewrite prf2 in Refl
           , \unifier, uniprf =>
@@ -123,14 +123,15 @@ unify (x ~> y) (z ~> w) =
             in (sAnds2sToUnifier ** \x =>
               rewrite sToUnifierPrf x in
               rewrite sAnds2sToUnifierPrf (apply s x) in
-              rewrite applySeqIsApplyApply s s2 x in Refl
+              rewrite applySeqIsApplyApply s2 s x in Refl
             )
           )
         )
 
+
 unify (Primitive x) (Primitive y) =
   case decEq (Primitive x) (Primitive y) of
-    Yes prf => Right (nullsubst **
+    Yes prf => Right (neutral **
       ( prf
       , \s2, _ => (s2 ** \t => rewrite nullsubstIsNoOp t in Refl)
       )
