@@ -1,7 +1,7 @@
 import Unify
 import LType
 import Substitution
-import Control.ST
+import Counter
 
 %default total
 
@@ -17,9 +17,9 @@ data Expr : Type where
 
 public export
 Env : Type
-Env = Identifier -> Maybe LType
+Env = Identifier -> Maybe (List TypeVarName, LType)
 
-extend : Identifier -> LType -> Env -> Env
+extend : Identifier -> (List TypeVarName, LType) -> Env -> Env
 extend id t env x =
   if x == id then
     Just t
@@ -28,7 +28,10 @@ extend id t env x =
 
 subEnv : Subst -> Env -> Env
 subEnv s e x =
-  map (apply s) $ e x
+  map (map (apply s)) $ e x
+
+freshAssignment : TypeVarName -> Counter Subst
+freshAssignment k = map ((|->) k) freshTVar
 
 {-
 The function below follows the algorithmic typing rules defined in
@@ -37,37 +40,36 @@ A proof of correctness for the Hindley-Milner
 type inference algorithm
 https://web.archive.org/web/20120324105848/http://www.cs.ucla.edu/~jeff/docs/hmproof.pdf
 -}
-infer' : (nextId : Var) -> Env -> Expr -> ST Maybe (Subst, LType) [nextId ::: State Nat]
+export
+infer : Env -> Expr -> Counter (Maybe (Subst, LType))
 
-infer' _ env (Variable x) = do
-  t <- lift $ env x
-  pure (neutral, t)
+infer env (Variable x) = do
+  let Just (vars, t) = env x
+    | Nothing => pure Nothing
 
-infer' ctx env (App f x) = do
-  (fSubst, fType) <- infer' ctx env f
-  (xSubst, xType) <- infer' ctx (subEnv fSubst env) x
+  instantiation <- foldl (<+>) neutral <$> traverse freshAssignment vars
+  pure $ Just (neutral, apply instantiation t)
 
-  returntype <- freshTVar ctx
-  (unifier ** _) <- lift $ eitherToMaybe $
+infer env (App f x) = do
+  Just (fSubst, fType) <- infer env f
+    | Nothing => pure Nothing
+
+  Just (xSubst, xType) <- infer (subEnv fSubst env) x
+    | Nothing => pure Nothing
+
+  returntype <- freshTVar
+  let Just (unifier ** _) = eitherToMaybe $
     unify (apply xSubst fType) (xType ~> returntype)
+    | Nothing => pure Nothing
 
-  pure (unifier <+> xSubst <+> fSubst, apply unifier returntype)
+  pure $ Just (unifier <+> xSubst <+> fSubst, apply unifier returntype)
 
-infer' ctx env (Lambda argname body) = do
-  argtype <- freshTVar ctx
-  (s, returntype) <- infer' ctx (extend argname argtype env) body
-  pure (s, apply s argtype ~> returntype)
-
-inferWrapper : Env -> Expr -> ST Maybe (Subst, LType) []
-inferWrapper env expr = do
-  nextId <- new 0
-  res <- infer' nextId env expr
-  delete nextId
-
-  pure res
+infer env (Lambda argname body) = do
+  argtype <- freshTVar
+  Just (s, returntype) <- infer (extend argname ([], argtype) env) body
+    | Nothing => pure Nothing
+  pure $ Just (s, apply s argtype ~> returntype)
 
 export
-infer : Env -> Expr -> Maybe LType
-infer env expr = do
-  (s, t) <- run $ inferWrapper env expr
-  pure $ apply s t
+typeOf : Env -> Expr -> Maybe LType
+typeOf env expr = map snd $ run $ infer env expr

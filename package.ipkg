@@ -2,5 +2,3 @@ package typeInference
 
 sourcedir = .
 modules = Infer
-
-pkgs = contrib

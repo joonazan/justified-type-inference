@@ -7,6 +7,6 @@ implementation Show LType where
   show (Primitive x) = x
 
 main : IO ()
-main = putStrLn $ show $ infer
+main = putStrLn $ show $ typeOf
   (\_ => Nothing)
   (Lambda "x" (Lambda "y" (Variable "y")))

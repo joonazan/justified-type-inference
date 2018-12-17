@@ -1,17 +1,9 @@
 module Unify
 
-import Control.ST
 import LType
 import Substitution
 
 %default total
-
-export
-freshTVar : (x : Var) -> ST m LType [x ::: State Nat]
-freshTVar x = do
-  i <- read x
-  write x (i + 1)
-  pure (TVar i)
 
 mapContains : LTypeContains x a -> (s : Subst) -> LTypeContains (apply s x) (apply s a)
 mapContains Here s = Here
