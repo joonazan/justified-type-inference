@@ -1,4 +1,6 @@
 import Unify
+import LType
+import Substitution
 import Control.ST
 
 %default total

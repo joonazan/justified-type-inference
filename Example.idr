@@ -1,5 +1,5 @@
 import Infer
-import Unify
+import LType
 
 implementation Show LType where
   show (x ~> y) = show x ++ " -> " ++ show y
