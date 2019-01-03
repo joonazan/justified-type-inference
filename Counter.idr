@@ -11,7 +11,7 @@ implementation Functor Counter where
 
 export
 implementation Applicative Counter where
-  pure a = ?holePureApplicative
+  pure a = MkCounter $ \x => (x, a)
 
   (MkCounter ctr) <*> (MkCounter ctr2) = MkCounter $ \count =>
     let (count', f) = ctr count
