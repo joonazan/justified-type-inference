@@ -1,5 +1,7 @@
 module LType
 
+import Pruviloj.Derive.DecEq
+
 public export
 TypeVarName : Type
 TypeVarName = Nat
@@ -12,35 +14,14 @@ data LType : Type where
   TVar : TypeVarName -> LType
   Primitive : String -> LType
 
+%language ElabReflection
+
+decEqForLType : (a : LType) -> (b : LType) -> Dec (a = b)
+%runElab (deriveDecEq `{decEqForLType})
+
 export
 implementation DecEq LType where
-  decEq (x ~> y) (z ~> w) with (decEq x z, decEq y w)
-    decEq (x ~> y) (z ~> w) | (Yes q, Yes p) = Yes $
-      rewrite q in cong p
-    decEq (x ~> y)(z ~> w)|(No t, _) = No $
-      \Refl => t Refl
-    decEq (x ~> y)(z ~> w)|(_, No t) = No $
-      \Refl => t Refl
-
-  decEq (TVar x) (TVar y) with (decEq x y)
-    decEq (TVar x) (TVar y) | (Yes prf) =
-      Yes $ cong prf
-    decEq (TVar x) (TVar y) | (No contra) =
-      No $ \Refl => contra Refl
-
-  decEq (Primitive x) (Primitive y) with (decEq x y)
-    decEq (Primitive x) (Primitive y) | (Yes prf) =
-      Yes $ cong prf
-    decEq (Primitive x) (Primitive y) | (No contra) =
-      No $ \Refl => contra Refl
-
-  decEq (TVar x) (Primitive y) = No $ \Refl impossible
-  decEq (Primitive x) (y ~> z) = No $ \Refl impossible
-  decEq (Primitive x) (TVar y) = No $ \Refl impossible
-  decEq (x ~> y) (TVar z) = No $ \Refl impossible
-  decEq (x ~> y) (Primitive z) = No $ \Refl impossible
-  decEq (TVar x) (y ~> z) = No $ \Refl impossible
-
+  decEq = decEqForLType
 
 export
 fstEqIfEq : a ~> b = c ~> d -> a = c
