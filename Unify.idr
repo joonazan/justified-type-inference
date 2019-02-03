@@ -8,19 +8,33 @@ import Data.HVect
 
 %default total
 
-mapContains : LTypeContains x a -> (s : Subst) -> LTypeContains (apply s x) (apply s a)
-mapContains Here s = Here
-mapContains (InArgument loc) s = InArgument $ mapContains loc s
-mapContains (InReturn loc) s = InReturn $ mapContains loc s
+subbedContains : (s : Subst) -> LTypeContains x a -> LTypeContains (apply s x) (apply s a)
+subbedContains s Here = Here
+subbedContains s (OnLeft loc) = OnLeft $ subbedContains s loc
+subbedContains s (OnRight loc) = OnRight $ subbedContains s loc
 
-occurs : LTypeContains (TVar x) (a ~> b) -> (s : Subst) -> lookup x s = (apply s a) ~> apply s b -> Void
-occurs (InArgument loc) s = notInLarger $ mapContains loc s
-occurs (InReturn loc) s = notInLarger2 $ mapContains loc s
+hlp : TApp a b = a -> Void
+hlp Refl impossible
 
-tvarNotInPrim : LTypeContains (TVar _) (Primitive _) -> Void
-tvarNotInPrim Here impossible
-tvarNotInPrim (InArgument _) impossible
-tvarNotInPrim (InReturn _) impossible
+hlp2 : TApp a b = b -> Void
+hlp2 Refl impossible
+
+occurs : LTypeContains (TVar x) t -> (TVar x = t -> Void)
+  -> (s : Subst) -> lookup x s = apply s t -> Void
+
+occurs Here notHere _ _ = notHere Refl
+
+occurs (OnLeft xOnLeft) _ s claim =
+  noContainmentLoops
+    (subbedContains s xOnLeft)
+    (rewrite claim in OnLeft Here)
+    (rewrite claim in hlp)
+
+occurs (OnRight xOnRight) _ s claim =
+  noContainmentLoops
+    (subbedContains s xOnRight)
+    (rewrite claim in OnRight Here)
+    (rewrite claim in hlp2)
 
 public export
 Unifies : Subst -> LType -> LType -> Type
@@ -47,26 +61,26 @@ UnificationResult a b =
 
 bindPrf : (s2 : Subst) -> (s2prf : apply s2 (TVar x) = apply s2 y)
   -> (any : LType) -> apply s2 any = apply s2 (apply (x |-> y) any)
-bindPrf s2 s2prf (y ~> z) =
+bindPrf s2 s2prf (TApp y z) =
   rewrite bindPrf s2 s2prf y in
   rewrite bindPrf s2 s2prf z in
   Refl
 
 bindPrf {x} {y} s2 s2prf (TVar k) with (decEq x k)
   bindPrf {x} {y} s2 s2prf (TVar k) | (No contra) =
-    rewrite singletonNoSub {b=y} (tvarNotInDifferentTvar contra) in Refl
+    rewrite noOpSubst y (tvarNotInDifferentTvar contra) in Refl
   bindPrf {x} {y} s2 s2prf (TVar k) | (Yes prf) =
     rewrite sym prf in
-    rewrite singletonSub {a=x} {b=y} in s2prf
+    rewrite singletonSubst {a=x} {b=y} in s2prf
 
-bindPrf s2 s2prf (Primitive y) = Refl
+bindPrf s2 s2prf (TConst y) = Refl
 
 bind : (a : TypeVarName) -> (b : LType) -> UnificationResult (TVar a) b
 bind x y =
   case decLTypeContains (TVar x) y of
     No contra => Right (x |-> y **
-      ( rewrite singletonSub {a=x} {b=y} in
-        rewrite singletonNoSub {b=y} contra in Refl
+      ( rewrite singletonSubst {a=x} {b=y} in
+        rewrite noOpSubst y contra in Refl
       , \s2, s2prf => (s2 ** \any => bindPrf s2 s2prf any)
       )
     )
@@ -82,8 +96,10 @@ bind x y =
           , \s2, _ => (s2 ** \any => rewrite nullsubstIsNoOp any in Refl)
           )
         )
-        a ~> b => Left $ occurs xInY
-        Primitive _ => Left $ absurd $ tvarNotInPrim xInY
+
+        TApp a b => Left $ occurs xInY (\Refl impossible)
+
+        TConst _ => Left $ absurd $ tvarNotInConst xInY
 
 canTransformMore : (pairs : Vect _ (LType, LType)) -> UnifiesAll s pairs -> UnifiesAll (s2 <+> s) pairs
 canTransformMore [] x = x
@@ -152,7 +168,7 @@ mutual
   export
   unify : (a : LType) -> (b : LType) -> UnificationResult a b
 
-  unify (x ~> y) (z ~> w) =
+  unify (TApp x y) (TApp z w) =
     case unifyMany [(x, z), (y, w)] of
       Left contra => Left $ \s, eq => contra s [fstEqIfEq eq, sndEqIfEq eq]
       Right (s ** ([unifiesXZ, unifiesYW], mguprf)) => Right (s **
@@ -162,14 +178,14 @@ mutual
         )
       )
 
-  unify (Primitive x) (Primitive y) =
-    case decEq (Primitive x) (Primitive y) of
+  unify (TConst x) (TConst y) =
+    case decEq x y of
       Yes prf => Right (neutral **
-        ( prf
+        ( cong prf
         , \s2, _ => (s2 ** \t => rewrite nullsubstIsNoOp t in Refl)
         )
       )
-      No contra => Left (\_ => contra)
+      No contra => Left $ \_, Refl => contra Refl
 
   unify (TVar x) y = bind x y
   unify x (TVar y) =
@@ -180,5 +196,5 @@ mutual
 
   -- Mismatch cases
 
-  unify (x ~> y) (Primitive z) = Left $ \_ => \Refl impossible
-  unify (Primitive x) (y ~> z) = Left $ \_ => \Refl impossible
+  unify (TApp _ _) (TConst _) = Left $ \_ => \Refl impossible
+  unify (TConst _) (TApp _ _) = Left $ \_ => \Refl impossible
