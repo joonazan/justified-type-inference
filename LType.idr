@@ -1,10 +1,15 @@
 module LType
 
 import Pruviloj.Derive.DecEq
+import Data.Vect
 
 public export
 TypeVarName : Type
 TypeVarName = Nat
+
+public export
+FieldName : Type
+FieldName = String
 
 infixr 10 ~>
 
@@ -13,6 +18,7 @@ data LType : Type where
   (~>) : LType -> LType -> LType
   TVar : TypeVarName -> LType
   Primitive : String -> LType
+  Record : Vect _ (FieldName, LType) -> LType
 
 %language ElabReflection
 
@@ -36,6 +42,7 @@ data LTypeContains : LType -> LType -> Type where
   Here : LTypeContains x x
   InArgument : LTypeContains x t -> LTypeContains x (t ~> r)
   InReturn : LTypeContains x t -> LTypeContains x (a ~> t)
+  InRecord : LTypeContains x t -> Elem (_, t) fields -> LTypeContains x (Record fields)
 
 neitherBranch : (LTypeContains x a -> Void) -> (LTypeContains x r -> Void)
   -> (x = (a ~> r) -> Void)
@@ -97,19 +104,34 @@ mutual
   notInLarger2 {x = Primitive _} (InReturn rest) Refl impossible
   notInLarger2 {x = TVar _} (InReturn rest) Refl impossible
 
-export
-decLTypeContains : (x : LType) -> (t : LType) -> Dec (LTypeContains x t)
-decLTypeContains x y with (decEq x y)
-  decLTypeContains x y | (Yes prf) = rewrite prf in Yes Here
-  decLTypeContains x (a ~> r) | (No notEqual) =
-    case decLTypeContains x a of
-      Yes prf => Yes $ InArgument prf
-      No notInArg =>
-        case decLTypeContains x r of
-          Yes prf => Yes $ InReturn prf
-          No notInReturn => No $ neitherBranch notInArg notInReturn notEqual
+mutual
+  findField : (x : LType) -> (fields : Vect _ (FieldName, LType))
+    -> (n: FieldName ** y : LType ** (LTypeContains x y, Elem (n, y) fields))
+  findField x [] = ?slv
+  findField x ((name, type) :: rest) =
+    case decLTypeContains x type of
+      Yes prf => (name ** type ** (prf, Here))
+      No prf =>
+        let (n ** t ** (cont, el)) = findField x rest
+        in (n ** t ** (cont, There el))
 
-  decLTypeContains x (TVar y) | (No notEqual) = No $ \claim => case claim of
-    Here => notEqual Refl
-  decLTypeContains x (Primitive y) | (No notEqual) = No $ \claim => case claim of
-    Here => notEqual Refl
+  export
+  decLTypeContains : (x : LType) -> (t : LType) -> Dec (LTypeContains x t)
+  decLTypeContains x y with (decEq x y)
+    decLTypeContains x y | (Yes prf) = rewrite prf in Yes Here
+    decLTypeContains x (a ~> r) | (No notEqual) =
+      case decLTypeContains x a of
+        Yes prf => Yes $ InArgument prf
+        No notInArg =>
+          case decLTypeContains x r of
+            Yes prf => Yes $ InReturn prf
+            No notInReturn => No $ neitherBranch notInArg notInReturn notEqual
+
+    decLTypeContains x (Record fields) | (No notEqual) =
+      let (n ** t ** (xInT, tInFields)) = findField x fields
+      in Yes $ InRecord xInT tInFields
+
+    decLTypeContains x (TVar y) | (No notEqual) = No $ \claim => case claim of
+      Here => notEqual Refl
+    decLTypeContains x (Primitive y) | (No notEqual) = No $ \claim => case claim of
+      Here => notEqual Refl
