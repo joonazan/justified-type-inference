@@ -3,4 +3,4 @@ package typeInference
 sourcedir = .
 modules = Infer
 
-pkgs = pruviloj
+pkgs = contrib, pruviloj
