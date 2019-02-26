@@ -1,3 +1,5 @@
+module StronglyConnected
+
 import Data.Fin
 import Data.SortedSet
 import Data.SortedMap
@@ -50,6 +52,8 @@ transposeGraph g = ( vertices g, reverseEdges g )
 flattenTree : Tree v -> List v
 flattenTree (Node a c) = a :: concatMap flattenTree c
 
+||| Returns the strongly connected components of a graph,
+||| topologically sorted.
 export
 scc : Graph v g => g -> List (List v)
-scc g = map flattenTree $ dfs g $ reversePostorder $ transposeGraph g
+scc g = map flattenTree $ dfs (transposeGraph g) $ reversePostorder g

@@ -1,5 +1,6 @@
 import Infer
 import LType
+import Environment
 
 implementation Show LType where
   show (TApp x y) = "(" ++ show x ++ " " ++ show y ++ ")"
@@ -7,6 +8,5 @@ implementation Show LType where
   show (TConst x) = x
 
 main : IO ()
-main = putStrLn $ show $ typeOf
-  (\_ => Nothing)
+main = putStrLn $ show $ typeOf empty
   (Lambda "x" (Lambda "y" (Variable "y")))
