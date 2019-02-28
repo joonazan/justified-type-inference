@@ -7,6 +7,8 @@ implementation Show LType where
   show (TVar x) = show x
   show (TConst x) = x
 
-main : IO ()
-main = putStrLn $ show $ typeOf empty
-  (Lambda "x" (Lambda "y" (Variable "y")))
+main : JS_IO ()
+main = putStrLn' $ show $ typeOf
+  ( extend "int" ([], TConst "Int") $
+    extend "string" ([], TConst "String") empty)
+  (Let [("id", (Lambda "y" (Variable "y")))] (Variable "id"))
